@@ -10,22 +10,139 @@ library(glue)
 library(janitor)
 library(feather)
 
+
+#
+#' https://statsapi.web.nhl.com/api/v1/people/8475848/stats/?stats=careerRegularSeason
+#'
+#'
+#'
+#' https://statsapi.web.nhl.com/api/v1/people/8475848/stats/?stats=yearByYear
+#'
+#'
+#' https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=false&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22goals%22,%22direction%22:%22DESC%22%7D,%7B%22property%22:%22assists%22,%22direction%22:%22DESC%22%7D%5D&start=0&limit=50&factCayenneExp=gamesPlayed%3E=1&cayenneExp=gameTypeId=2%20and%20seasonId%3C=20192020%20and%20seasonId%3E=20192020
+#'
+#' https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId=2019020001
+#'
+#' https://api.nhle.com/stats/rest/en/skater/summary?isAggregate=false&isGame=false&sort=%5B%7B%22property%22:%22points%22,%22direction%22:%22DESC%22%7D%5D&start=0&limit=50&factCayenneExp=gamesPlayed%3E=1&cayenneExp=gameTypeId=2%20and%20seasonId%3C=20192020%20and%20seasonId%3E=20192020
+#'
+#' https://api.nhle.com/stats/rest/en/leaders/skaters/points?cayenneExp=season=20192020%20and%20gameType=2
+#'
+#'
+#'
+
+
+
+
+
 sch <- nhl_schedule(st_dt = "2018-07-02", en_dt = "2020-09-01")
 
 
 
 gms <- sch %>%
-    #sample_n(100) %>%
+    #sample_n(10) %>%
     pull(gamePk) %>%
     unique() %>%
     sample()
 
 plays <- gms %>% nhl_games_plays()
+actions <- gms %>% nhl_games_actions()
+pressure <- gms %>% nhl_games_pressure()
+shifts <- gms %>% nhl_Shifts_many()
 
+NHL_TBL_CACHE_GLOBAL <- list()
+
+nhl_cache_tables(gms)
+nhl_cache_tables <- function(gms,
+                             game_plays = T,
+                             game_actions = T,
+                             game_pressure = T,
+                             game_shifts = T,
+                             game_officials= T,
+                             game_summary = T,
+                             game_Player_on_ice = T,
+                             playerprofiles = T#,
+                             #venues = T
+                             ){
+
+    NHL_TBL_CACHE_tmp <- list()
+    if (game_plays){
+        NHL_TBL_CACHE_tmp[["game_plays"]] <- gms %>% nhl_games_plays()
+    }
+    if (game_actions){
+        NHL_TBL_CACHE_tmp[["game_actions"]] <- gms %>% nhl_games_actions()
+    }
+    if (game_pressure){
+        NHL_TBL_CACHE_tmp[["game_pressure"]] <- gms %>% nhl_games_pressure()
+    }
+    if (game_shifts){
+        NHL_TBL_CACHE_tmp[["game_shifts"]] <- gms %>% nhl_games_shifts()
+    }
+    if(game_officials){
+        NHL_TBL_CACHE_tmp[["game_officials"]] <- gms %>% nhl_games_officials()
+        # NHL_TBL_CACHE_tmp[["game_officials"]]$link[[1]] %>%
+        #     unique() %>%
+        #     nhl_link()
+    }
+    if(game_Player_on_ice){
+        NHL_TBL_CACHE_tmp[["game_Player_on_ice"]] <- nhl_players_on_ice_at_plays(plays = NHL_TBL_CACHE_tmp[["game_plays"]],
+                                                                                 shifts = NHL_TBL_CACHE_tmp[["game_shifts"]]
+                                                                                 )
+    }
+    if(game_summary){
+        NHL_TBL_CACHE_tmp[["game_summary"]] <- gms %>% nhl_games_summary()
+    }
+    if(playerprofiles){
+        NHL_TBL_CACHE_tmp[["playerprofiles"]] <-
+            lapply(NHL_TBL_CACHE_tmp, function(x){
+                x[["player_id"]]
+            })  %>% unlist() %>% unique() %>%
+                nhl_player_profiles() %>%
+                tidyr::separate(height, into = c("feet", "inches"), convert = T) %>% mutate(height_cm = 2.54*(feet*12 + inches))
+
+    }
+
+    # combine the two caches
+    lapply(names(NHL_TBL_CACHE_tmp), function(nm){
+        NHL_TBL_CACHE_GLOBAL[[nm]] <<-
+            bind_rows(
+                NHL_TBL_CACHE_tmp[[nm]] %>%
+                    mutate(time_generated = Sys.time()),
+                NHL_TBL_CACHE_GLOBAL[[nm]]
+            ) %>%
+                arrange(desc(time_generated)) %>%
+                distinct_at(vars(-time_generated), .keep_all = TRUE)
+
+    })
+
+    write_rds(x = NHL_TBL_CACHE_GLOBAL, file = "NHL_TBL_CACHE_GLOBAL.rds", compress = F)
+}
+
+
+
+
+tic = Sys.time()
+actions <- gms %>% nhl_games_actions()
+toc = Sys.time()
+print(toc-tic)
+nhl_games_actions
+
+
+
+sch_games_without_pressure <-
+    sch %>%
+    rename(game_id := gamePk) %>%
+    anti_join(pressure %>% count(game_id), by = "game_id")
+pressure %>% count(game_id) %>% view()
+
+
+
+
+# checks this wierd thing that sometime happens where dataframes are corrupt
 lapply(colnames(plays), function(x){
     length(plays[[x]])
 
 }) %>% unlist() %>% table()
+
 
 #write_feather(plays, "plays.feather")
 #nhl_cache_persist_to_disk()
@@ -40,7 +157,6 @@ sch_games_without_plays <-
     rename(game_id := gamePk) %>%
     anti_join(plays %>% count(game_id), by = "game_id")
 shifts <- NULL
-shifts <- gms %>% nhl_Shifts_many()
 
 
 
@@ -56,7 +172,7 @@ write_feather(shifts, "shifts.feather")
 players_on_ice <- nhl_players_on_ice_at_plays(plays, shifts)
 write_feather(players_on_ice, "players_on_ice.feather")
 
-player_doing_play <- gms %>% nhl_games_plays_players()
+
 
 lapply(colnames(player_doing_play), function(x){
     length(player_doing_play[[x]])

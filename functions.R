@@ -34,8 +34,15 @@ library(roxygen2)
 library(digest)
 library(ggforce)
 library(sqldf)
+library(parallel)
+
+NHL_LAST_API_CALL<<- Sys.time()
 
 
+####################################
+#'
+#'
+#'
 NHL_ICE_FEATURES = list(
     # ice features
     faceoff_circles = data.frame(
@@ -52,22 +59,27 @@ NHL_ICE_FEATURES = list(
     )
 ,
     blue_line= data.frame(x = c(25, 25),
-                            y = c(-40, 40))
+                          y = c(-40, 40))
 ,
     goal_line = data.frame(x = c(89, 89),
-                            y = c(-40, 40)),
+                           y = c(-40, 40)),
     center_line = data.frame(x = c(0,0),
-                          y = c(-40, 40))
+                             y = c(-40, 40))
 )
 
+
+####################################
+#'
+#'
+#'NHL_gg_add_ice_elments()
 NHL_gg_add_ice_elments <-function(gg_object = ggplot(data = tibble(), mapping = aes())){
 
     gg_object +
-        geom_line(data = NHL_ICE_FEATURES$blue_line, aes(x = x, y = y), color = "blue", size = 3) +
-        geom_line(data = NHL_ICE_FEATURES$blue_line, aes(x = -x, y = y), color = "blue", size = 3) +
-        geom_line(data = NHL_ICE_FEATURES$center_line, aes(x = x, y = y), color = "red", size = 3) +
-        geom_line(data = NHL_ICE_FEATURES$goal_line, aes(x = x, y = y), color = "red") +
-        geom_line(data = NHL_ICE_FEATURES$goal_line, aes(x = -x, y = y), color = "red") +
+        geom_line(data = NHL_ICE_FEATURES$blue_line, aes(x = x, y = y), color = "blue", size = 3, inherit.aes = FALSE) +
+        geom_line(data = NHL_ICE_FEATURES$blue_line, aes(x = -x, y = y), color = "blue", size = 3, inherit.aes = FALSE) +
+        geom_line(data = NHL_ICE_FEATURES$center_line, aes(x = x, y = y), color = "red", size = 3, inherit.aes = FALSE) +
+        geom_line(data = NHL_ICE_FEATURES$goal_line, aes(x = x, y = y), color = "red", inherit.aes = FALSE) +
+        geom_line(data = NHL_ICE_FEATURES$goal_line, aes(x = -x, y = y), color = "red", inherit.aes = FALSE) +
         geom_rect(
             data = NHL_ICE_FEATURES$goal_rectangle,
             aes(
@@ -78,7 +90,8 @@ NHL_gg_add_ice_elments <-function(gg_object = ggplot(data = tibble(), mapping = 
             ),
             fill = "blue",
             alpha = 0.1,
-            color = "red"
+            color = "red",
+            inherit.aes = FALSE
         ) +
         geom_rect(
             data = NHL_ICE_FEATURES$goal_rectangle,
@@ -90,55 +103,66 @@ NHL_gg_add_ice_elments <-function(gg_object = ggplot(data = tibble(), mapping = 
             ),
             fill = "steelblue2",
             alpha = 0.1,
-            color = "red"
+            color = "red",
+            inherit.aes = FALSE
         ) +
         geom_circle(
             data = NHL_ICE_FEATURES$faceoff_circles,
             aes(x0 = x0, y0 = y0, r = r),
             fill = "steelblue2",
             alpha = 0.1,
-            color = "red"
+            color = "red",
+            inherit.aes = FALSE
         ) +
         geom_circle(
             data = NHL_ICE_FEATURES$faceoff_circles,
             aes(x0 = -x0, y0 = y0, r = r),
             fill = "steelblue2",
             alpha = 0.1,
-            color = "red"
+            color = "red",
+            inherit.aes = FALSE
         ) + ggplot2::theme_void()
 }
 
 
 
-###################################
-#' global variable that records the last time we hit the NHL API
-#'
-NHL_LAST_API_CALL <- Sys.time()
+
+
+
+
 
 ###################################
 #' global variable that says how long to wait in seconds between API calls
 #'
 NHL_DELAY_TIME_API = 0.25
 
-###################################
-#' global variable that hold the NHL Cache it is a list with a hash of the URL as the key
-#'
-#'
+
 nhl_cache_get_blank <- function(){
-tibble(key = character(),
-       url = character(),
-       fetched =  as.POSIXct(NA),
-       val = list())
+    tibble(key = character(), url = character(), fetched = as.POSIXct(NA), val = list())
 }
 
+####################################
+#'
+#'
+#'
 NHL_API_CACHE = nhl_cache_get_blank()
 
 
-
+####################################
+#'
+#'
+#'
 nhl_cache_persist_to_disk <- function(){
     write_rds(x = NHL_API_CACHE, file = "nhl_cache.rds")
 }
 
+
+
+####################################
+#'
+#'
+#' @example
+#' nhl_cache_read_from_disk()
 nhl_cache_read_from_disk <- function(){
 
     NHL_API_CACHE <<- tryCatch(read_rds("nhl_cache.rds"),
@@ -152,13 +176,32 @@ nhl_cache_read_from_disk <- function(){
                     })
 }
 
+
+
+
 nhl_cache_read_from_disk()
+
+# library(httr)
+# library(jsonlite)
+# res = GET(full_url)
+# data = fromJSON(rawToChar(res$content))
+# res$content
+
 #full_url= "https://statsapi.web.nhl.com/api/v1/game/2019021033/feed/live?site=en_nhl"
 #full_url="https://statsapi.web.nhl.com/api/v1/game/2019030123/feed/live?site=en_nhl"
 #full_url="https://statsapi.web.nhl.com/api/v1/game/2018010001/feed/live?site=en_nhl"
 ###################################
+#'
+#'
 #'cache wrapper around fromJSON function
+#'
+#'
 #' @param url the url to call
+#'
+#' @example
+#' fromJSON_cache(full_url= "https://statsapi.web.nhl.com/api/v1/game/2019021033/feed/live?site=en_nhl")
+#' fromJSON_cache(full_url= "https://statsapi.web.nhl.com/api/v1/game/2019030123/feed/live?site=en_nhl")
+#' fromJSON_cache(full_url= "https://statsapi.web.nhl.com/api/v1/game/2018010001/feed/live?site=en_nhl")
 fromJSON_cache <- function(full_url){
     curr_key <- digest(full_url)
 
@@ -215,22 +258,36 @@ fromJSON_cache <- function(full_url){
     NHL_API_CACHE %>% filter(key == curr_key) %>% pull(val) %>% nth(1)
 }
 
+####################################
+#'
+#'
+#' checks this wierd thing that sometime happens where dataframes are corrupt
+#'
+#'
+nhl_check_df <- function(dat){
+    # checks this wierd thing that sometime happens where dataframes are corrupt
+    lapply(colnames(dat), function(x){
+        length(dat[[x]])
+    }) %>% unlist() %>% unique() %>% length() == 1
+}
+
+####################################
+#'
+#'
+#'shifts_plays <- nhl_players_on_ice_at_plays(plays, shifts)
+nhl_players_on_ice_at_plays <- function(plays, shifts, actions = NULL){
 
 
-nhl_players_on_ice_at_plays <- function(plays, shifts){
-
-    shifts <-
+    s <-
         shifts %>%
-        rename(game_id := gameId) %>%
-        rename(shift_id := id) %>%
-        rename(team_id := teamId) %>%
-        rename(team_name := teamName) %>%
-
-    s <- shifts %>% select(shift_id, game_id, period, playerId, startTime, endTime, team_id, team_name) %>%
+        dplyr::select(shift_id, game_id, period, player_id, start_time, end_time, team_id, team_name) %>%
         rename(shift_team_id := team_id, shift_team_name := team_name)
 
-    pp <- plays %>% select(play_id, game_id, period, periodTime, event, team_id, team_name, is_home) %>%
-        rename(play_team_id := team_id, play_team_name := team_name, play_is_home := is_home)
+    pp <-
+        plays %>%
+        dplyr::select(play_id, game_id, period, period_time, event, team_id, team_name, is_home, empty_net, coord_x_st, coord_y_st) %>%
+        rename(play_team_id := team_id, play_team_name := team_name, play_is_home := is_home) #%>%
+        #dplyr::select(-event, - play_team_name, play_is_home) %>% clean_names()
 
     p_need_start <-
         pp %>%
@@ -242,46 +299,204 @@ nhl_players_on_ice_at_plays <- function(plays, shifts){
 
     p_rest <- pp %>% anti_join(p_need_start, by = c("play_id")) %>% anti_join(p_need_end, by = c("play_id"))
 
-
-
+    #sqldf("select p.*   from pp as p")
+    #sqldf("select s.* from s as s")
 
     sp_rest <-
     sqldf ("
-        SELECT s.shift_id  , s.playerId , s.startTime, s.endTime , p.*
+        SELECT s.shift_id, s.player_id , s.start_time , s.end_time  , s.shift_team_id , s.shift_team_name, p_rest.*
         FROM s AS s
-        INNER JOIN p_rest as p ON
-    s.game_id = p.game_id AND
-    s.period = p.period AND
-    s.startTime <= p.periodTime AND
-    s.endTime >= p.periodTime") %>% tibble()
+        INNER JOIN p_rest ON
+    s.game_id = p_rest.game_id AND
+    s.period = p_rest.period AND
+    s.start_time <= p_rest.period_time AND
+    s.end_time >= p_rest.period_time") %>% tibble()
 
     sp_need_start <-
         sqldf ("
-        SELECT s.shift_id  , s.playerId , s.startTime, s.endTime , p.*
+        SELECT s.shift_id, s.player_id , s.start_time , s.end_time  , s.shift_team_id , s.shift_team_name   , p_need_start.*
         FROM s AS s
-        INNER JOIN p_need_start as p ON
-    s.game_id = p.game_id AND
-    s.period = p.period AND
-    s.startTime <= p.periodTime AND
-    s.endTime > p.periodTime") %>% tibble()
+        INNER JOIN p_need_start ON
+    s.game_id = p_need_start.game_id AND
+    s.period = p_need_start.period AND
+    s.start_time <= p_need_start.period_time AND
+    s.end_time > p_need_start.period_time") %>% tibble()
 
     sp_need_end <-
         sqldf ("
-        SELECT s.shift_id  , s.playerId , s.startTime, s.endTime , p.*
+        SELECT s.shift_id, s.player_id , s.start_time , s.end_time  , s.shift_team_id , s.shift_team_name    , p_need_end.*
         FROM s AS s
-        INNER JOIN p_need_end as p ON
-    s.game_id = p.game_id AND
-    s.period = p.period AND
-    s.startTime < p.periodTime AND
-    s.endTime >= p.periodTime") %>% tibble()
+        INNER JOIN p_need_end ON
+    s.game_id = p_need_end.game_id AND
+    s.period = p_need_end.period AND
+    s.start_time < p_need_end.period_time AND
+    s.end_time >= p_need_end.period_time") %>% tibble()
 
 
     shifts_plays <-
-        rbind(sp_rest,
-              sp_need_start,
-              sp_need_end)
-    shifts_plays
+        bind_rows(sp_rest,
+                  sp_need_start,
+                  sp_need_end
+                  )
+
+    if(is.null(actions)){
+        return(shifts_plays)
+    }else{
+        return(
+        shifts_plays %>%
+            mutate(my_teams_play = shift_team_id == play_team_id) %>%
+            rename(player_id_shifts := player_id) %>%
+            left_join(actions %>% rename(player_id_actions := player_id), by = "play_id") %>%
+            mutate(OnIce_player_is_action = player_id_shifts == player_id_shifts) %>%
+            distinct()
+        )
+    }
+
+
 }
+
+# NHL_grid_events <- function(shifts_plays){
+#
+# }
+
+
+
+
+###############################################
+#'
+#'
+#'NHL_gg_goals(shifts_plays = shifts_plays, playerId = 8477492)
+#'NHL_gg_goals(shifts_plays = shifts_plays, playerId = NULL)
+NHL_gg_goals <- function(shifts_plays, a_playerId = NULL, at_home = NULL, side = "right"){
+
+
+    n_d <- NHL_grid_relative_events(shifts_plays = shifts_plays, a_playerId = a_playerId, a_event = "Shot", side = side)
+    lmts <-
+        {if (side == "left") c(NA, 0)
+        else if (side == "right")  c(0, NA)
+        else c(NA, NA)
+        }
+    p <-
+        n_d %>%
+        ggplot(aes(x = x, y = y, z = z_relative, fill = z_relative)) +
+        geom_tile(alpha = 0.99)+
+        scale_fill_continuous_divergingx(palette = 'PiYG', mid = 0) +
+        scale_x_continuous(limits = lmts) +
+        labs(title = "Goals scored")
+    NHL_gg_add_ice_elments(gg_object = p)
+
+
+    denom_dat <-
+        shifts_plays %>%
+        {if(!is.null(at_home)) filter(., play_is_home  == at_home) else .} %>%
+        #{if(!is.null(a_emptyNet)) filter(., play_is_home  == a_emptyNet) else .} %>%
+        filter(event == "Goal") %>%
+        filter(is.null(emptyNet) | emptyNet  == FALSE) %>%
+        mutate(coord_x_st = ifelse(play_is_home, coord_x_st, -coord_x_st)) %>%
+        mutate(coord_y_st = ifelse(play_is_home, coord_y_st, -coord_y_st)) %>%
+        filter(coord_x_st > 0)
+
+    numer_dat <-
+        denom_dat %>%
+        {if(!is.null(a_playerId)) filter(., playerId  == a_playerId) else .}
+
+    filter(is.null(emptyNet) | emptyNet  == FALSE)
+
+    d <- kde2d(denom_dat$coord_x_st, denom_dat$coord_y_st, n = 100, lims = c(range(denom_dat$coord_x_st), range(denom_dat$coord_y_st)))
+    n <- kde2d(numer_dat$coord_x_st, numer_dat$coord_y_st, n = 100, lims = c(range(denom_dat$coord_x_st), range(denom_dat$coord_y_st)))
+
+
+    n_d <-
+    inner_join(
+    d %>% interp2xyz(data.frame=TRUE) ,
+    n %>% interp2xyz(data.frame=TRUE) ,by = c("x","y"),   suffix = c("_d", "_n")) %>%
+        mutate(z_relative = z_d- z_n)
+
+    n_d$z_relative %>% quantile(probs = c(0, 0.05, 0.25,0.5,0.75,0.95, 1))
+
+    library(colorspace)
+    p <-
+        n_d %>%
+        ggplot(aes(x = x, y = y, z = z_relative, fill = z_relative)) +
+        geom_tile(alpha = 0.99)+
+        scale_fill_continuous_divergingx(palette = 'PiYG', mid = 0) +
+        scale_x_continuous(limits = c(0,NA)) +
+        labs(title = "Goals scored")
+    NHL_gg_add_ice_elments(gg_object = p)
+    library(MASS)
+    library(akima)
+    a <-
+
+
+
+    class(a)
+    filled.contour(a)
+    a %>% as.tibble()
+    p <-
+        a %>%
+        interp2xyz(data.frame=TRUE) %>%
+        ggplot(aes(x = x, y = y, z = z, fill = z)) +
+        geom_tile() +
+        scale_fill_gradientn(colors = brewer.pal(n = 9,name = "Greens"))
+
+    NHL_gg_add_ice_elments(gg_object = p)
+
+        stat_bin_hex()
+
+    p <-
+        plot_dat %>%
+        ggplot(aes(x = coord_x_st, y = coord_y_st)) +
+        geom_hex(alpha = 0.75, bins = 20) +
+        #scale_fill_gradientn(colors = brewer.pal(n = 9,name = "Greens")) +
+        scale_fill_gradientn(colors = brewer.pal(n = 9,name = "Greens"),  labels = function(x) scales::percent(x/nrow(plot_dat))) +
+        scale_x_continuous(limits = c(0,NA)) +
+        labs(title = "Goals scored")
+
+    NHL_gg_add_ice_elments(gg_object = p)
+}
+#
+# p<-
+# shifts_plays %>%
+#     filter(playerId  == 8477492 & event == "Goal") %>%
+#
+#     mutate(coord_x_st = ifelse(play_is_home, coord_x_st, -coord_x_st)) %>%
+#     mutate(coord_y_st = ifelse(play_is_home, coord_y_st, -coord_y_st)) %>%
+#     filter(coord_x_st > 0) %>%
+#     ggplot(aes(x = coord_x_st, y = coord_y_st)) +
+#     geom_hex(alpha = 0.75, bins = 20) +
+#     scale_fill_gradientn(colors = brewer.pal(n = 9,name = "Greens")) +
+#     scale_x_continuous(limits = c(0,NA)) +
+#     labs(title = "Goals scored")
+#
+#
+# NHL_gg_add_ice_elments(gg_object = p)
+#
+#
+# shifts_plays %>% count(emptyNet)
+#
+# mutate(coord_x_st = ifelse((needs_switch & period %in% c(2,4,6,8)) |
+#                                (!needs_switch & period %in% c(1,3,5,7))  ,
+#                            coord_x,
+#                            -coord_x)
+# ) %>%
+#     mutate(coord_y_st = ifelse((needs_switch & period %in% c(2,4,6,8)) |
+#                                    (!needs_switch & period %in% c(1,3,5,7))  ,
+#                                coord_y,
+#                                -coord_y)
+#
+#
+#
+#
+# NHL_gg_add_ice_elments(gg_object = p)
+#
+# actions %>% filter(eventTypeId == "SHOT" & playerType  == "Shooter") %>% count(player_id, sort = T)
+# actions %>% filter(eventTypeId == "GOAL" & playerType  == "Scorer") %>% count(player_id, sort = T)
+# actions %>% filter(eventTypeId == "GOAL" & playerType  == "Assist") %>% count(player_id, sort = T)
+# actions %>% filter(eventTypeId == "GOAL" & playerType  == "Goalie") %>% count(player_id, sort = T)
+# player_id = 8477492
+# player_id = 8471214
+# player_id = 8476453
+# player_id = 8474651
 
 
 
@@ -289,6 +504,9 @@ nhl_players_on_ice_at_plays <- function(plays, shifts){
 ###################################
 #' takes a game object and returns a table with 4 columns, showing the players in involved in each play
 #' @param this_game
+#'
+#' nhl_game_plays_players2(this_game = nhl_play_by_play(2018020560))
+#'
 nhl_game_plays_players2 <- function(this_game){
 
     plays_players_list <- this_game$liveData$plays$allPlays$players
@@ -307,9 +525,7 @@ nhl_game_plays_players2 <- function(this_game){
                 player_link=plays_players_list[[row_i]]$player$link
                 )
         }
-    })
-
-
+    }) %>% clean_names()
 }
 
 
@@ -353,10 +569,33 @@ nhl_game_result <- function(this_game){
 
 
 
+
+####################################
+#'
+#'
+#'
+nhl_games_summary <- function(ids){
+    ids %>%
+        unique() %>%
+        nhl_lapply(nhl_game_summary)
+}
+
+####################################
+#'
+#'
+#'
+nhl_game_summary <- function(id){
+    id %>%
+        nhl_play_by_play() %>%
+        nhl_game_summary2()
+}
+
+
+
 ###################################
 #' returns tibble with a very high level summary of the game
 #' @param this_game game object
-nhl_game_summary <- function(this_game){
+nhl_game_summary2 <- function(this_game){
 
     table_game <- tibble(
 
@@ -381,17 +620,26 @@ nhl_game_summary <- function(this_game){
         venue_time_zone_tz=this_game$gameData$teams$home$venue$timeZone$tz
     )
 
-    return(table_game)
+    table_game %>% clean_names()
 }
 
 
+
+
+####################################
+#'
+#'
+#'
 nhl_games_plays_players <- function(ids){
     ids %>%
         unique() %>%
-        map_dfr(nhl_game_plays_players)
+        nhl_lapply(nhl_game_plays_players)
 }
 
-
+####################################
+#'
+#'
+#'
 nhl_game_plays_players <- function(id){
     id %>%
         nhl_play_by_play() %>%
@@ -400,35 +648,192 @@ nhl_game_plays_players <- function(id){
 
 
 
-
-nhl_games_plays <- function(ids){
+####################################
+#'
+#' some times we get a blank tibble back from some of the nhl functions
+#' this causes issues with corrupted dataframes when using vanilla lapply and map_dfr
+#' so we wrap it in this which removes blank data frames
+#'
+nhl_lapply <-function(ids, func){
     tmp <-
         ids %>%
         unique() %>%
-        lapply(nhl_game_plays)
+        mclapply(func)
 
     #Remove blank tibbles
     tmp <- tmp[lapply(tmp, function(x){nrow(x)}) %>% unlist() != 0] #%>% length()
 
     #bind the tibbles
-    tmp <- tmp %>% bind_rows()
+    tmp %>% bind_rows()
+}
 
-    tmp
+####################################
+#'
+#' returns a dataframe with plays for all the games
+#'
+#'nhl_games_plays(c(2018010002, 2019010084))
+nhl_games_plays <- function(game_ids){
+    nhl_lapply(game_ids, nhl_game_plays)
 }
 
 
 
+####################################
+#'
+#' returns a dataframe with plays for all the games
+#'
+#'nhl_games_plays(c(2018010002, 2019010084))
+nhl_games_actions <- function(game_ids){
+    nhl_lapply(game_ids, nhl_game_actions)
+}
+
+
+
+####################################
+#'
+#'nhl_game_plays(2018010002)
+#'
 nhl_game_plays <- function(id){
     id %>%
         nhl_play_by_play() %>%
         nhl_game_plays2()
 }
 
+###################################
+#'nhl_game_actions(id = 2019010107)
+nhl_game_actions <- function(id){
+    print(id)
+    id %>%
+        nhl_play_by_play() %>%
+        nhl_game_actions2()
+}
+
+###################################
+#'
+nhl_tic_toc <- function(func, ...){
+    tic - Sys.time()
+    ret_val <- func(...)
+    toc - Sys.time()
+    print(glue("{toc-tic}"))
+}
+
+
+
+
+####################################
+#'
+#' returns a dataframe with plays for all the games
+#'
+#'nhl_games_pressure(c(2018010002, 2019010084))
+nhl_games_pressure <- function(game_ids){
+    nhl_lapply(game_ids, nhl_game_pressure)
+}
+
+
+
+###################################
+#'nhl_game_pressure(id = 2019010107)
+nhl_game_pressure <- function(id){
+    print(id)
+    id %>%
+        nhl_play_by_play() %>%
+        nhl_game_pressure2()
+}
+
+
+####################################################
+#'
+#' returns the pressure for the game ????
+#'
+#' @example
+#' nhl_game_actions2(this_game = nhl_play_by_play(2019010107))
+#' nhl_game_pressure2(this_game = nhl_play_by_play(2018010002))
+#' nhl_game_pressure2(this_game = nhl_play_by_play(2019020173))
+#'
+#' 2019020173
+nhl_game_pressure2 <- function(this_game){
+    if(is_null(this_game)){
+        return(tibble())
+    }
+    game_id <- this_game$gamePk
+    home_team_id <- this_game$gameData$teams$home$id
+    away_team_id <- this_game$gameData$teams$away$id
+
+    sp <- this_game$liveData$shotPressure
+
+
+    if (is.null(sp)){
+        return(tibble())
+    }
+    if(is.null(names(sp$skaterAdvantages$homeTeam))){
+        return(tibble())
+    }
+
+    bind_rows(
+        sp$skaterAdvantages$homeTeam %>% tibble() %>%
+            mutate(team_id = home_team_id),
+        sp$skaterAdvantages$awayTeam %>% tibble() %>%
+            mutate(team_id = away_team_id)
+    ) %>% arrange(start) %>%
+        distinct() %>%
+        mutate(time = (end - start)) %>% #pull(time) %>% hist()
+        #arrange(desc(time)) %>%
+        mutate(game_id = game_id) %>%
+        mutate(is_home = home_team_id == team_id) %>%
+        clean_names()
+}
+
+
+
+
+###################################
+#' takes a game object and returns a dataframe of information about the actions players took
+#' @param this_game game object
+#'
+#' @example
+#' nhl_game_actions2(this_game = nhl_play_by_play(2019010107))
+#' nhl_game_actions2(this_game = nhl_play_by_play(2018010002))
+nhl_game_actions2 <- function(this_game){
+
+
+    if(is_null(this_game)){
+        return(tibble())
+    }
+
+    game_id <- this_game$gamePk
+    home_team_id <- this_game$gameData$teams$home$id
+
+    ap <- this_game$liveData$plays$allPlay
+
+
+    if (is.null(ap) | is.null(colnames(ap))){
+        return(tibble())
+    }
+
+    if (nrow(ap) == 0){
+        #print("Game has no plays")
+        return(tibble())
+    }
+    tibble(play_id = ap$about$eventIdx %>% paste0(game_id, "_", .),
+           eventTypeId = ap$result$eventTypeId,
+           players = ap$players
+    ) %>% unnest(cols = c(players)) %>%
+        mutate(player_id = player$id) %>%
+        mutate(action_id = paste0(play_id, "_", player_id )) %>%
+        dplyr::select(-player) %>%
+        clean_names()
+}
+
 #this_game <- nhl_play_by_play(2018010002)
 #this_game <- nhl_play_by_play(2019010084)
+#'nhl_game_plays2(this_game)
 ###################################
 #' takes a game object and returns a dataframe of information about the plays
 #' @param this_game game object
+#'
+#' @example
+#' nhl_game_plays2(this_game= nhl_play_by_play(2019010084))
+#' nhl_game_plays2(this_game= nhl_play_by_play(2018010002))
 nhl_game_plays2 <- function(this_game){
 
     if(is_null(this_game)){
@@ -445,51 +850,84 @@ nhl_game_plays2 <- function(this_game){
 
     game_id <- this_game$gamePk
 
+
+
     home_team_id <- this_game$gameData$teams$home$id
     game_plays <- bind_cols(ap$about %>% tibble() %>%
                                 mutate(goals_away = goals$away,
-                                       goals_home = goals$home) %>%
-                                select(-goals),
+                                       goals_home = goals$home) %>% dplyr::select(-goals),
                             ap$result %>% tibble() %>%
                                 mutate(strength = strength$name),
                             ap$coordinates %>% tibble() %>%
                                 rename_all(~ paste0("coord_", .x)),
                             ap$team %>% tibble() %>%
-                                rename_all(~ paste0("team_", .x))
-    ) %>%
+                                rename_all(~ paste0("team_", .x))#,
+                            #ap$players %>% tibble(players = .)
+                            ) %>%
         mutate(game_id = game_id) %>%
         mutate(play_id = paste0(game_id,"_", eventIdx)) %>%
         mutate(is_home = home_team_id == team_id) %>%
         mutate(periodTime = as.ITime(periodTime, format="%M:%OS")) %>%
         mutate(periodTimeRemaining = as.ITime(periodTimeRemaining, format="%M:%OS"))
 
-
     game_plays %>%
-        nhl_game_x_y_normalize() %>%
-        return()
-
-
+        nhl_game_x_y_normalize() %>% #dplyr::select(-players)
+        clean_names() %>%
+    return()
 }
 
 
 ###################################
 #' returns a dataframe of information about the goals in the game
 #' @param this_game game object
+#'
+#' @example
+#' nhl_game_goal_info(this_game= nhl_play_by_play(2019010084))
+#' nhl_game_goal_info(this_game= nhl_play_by_play(2018010002))
 nhl_game_goal_info <- function(this_game){
     game_plays <- nhl_game_plays2(this_game)
 
     goal_plays <- game_plays %>%
         filter(event == "Goal") %>%
-        select(any_of(c("play_id", "period", "periodTime", "strength", "gameWinningGoal", "emptyNet", "is_home", "coord_x", "coord_y", "coord_x_st", "coord_y_st")))
+        dplyr::select(any_of(c("play_id", "period", "period_time", "strength", "game_winning_goal", "empty_net", "is_home", "coord_x", "coord_y", "coord_x_st", "coord_y_st")))
 
     return(goal_plays)
 }
 
 
+
+####################################
+#'
+#' returns a dataframe with officials for all the games
+#'
+#'nhl_games_officials(c(2018010002, 2019010084))
+nhl_games_officials <- function(game_ids){
+    nhl_lapply(game_ids, nhl_game_officials)
+}
+
+
+
+###################################
+#'nhl_game_officials(id = 2019010107)
+nhl_game_officials <- function(id){
+    print(id)
+    id %>%
+        nhl_play_by_play() %>%
+        nhl_game_officials2()
+}
+
+
+
 ###################################
 #' takes a game object and returns an officials table for the data
+#'
+#'
 #' @param this_game game object
-nhl_game_officials <- function(this_game){
+#'
+#' @example
+#' nhl_game_officials2(this_game = nhl_play_by_play(2019010064))
+#'
+nhl_game_officials2 <- function(this_game){
 
     ret_val <- tibble()
     if(!is.null(this_game$liveData$boxscore$officials$official)){
@@ -498,19 +936,23 @@ nhl_game_officials <- function(this_game){
 
     ret_val <-
         bind_cols(
-            select(officials, -official),
+            dplyr::select(officials, -official),
             officials$official
         ) %>%
-        mutate(game_id = this_game$gamePk)
+        mutate(game_id = this_game$gamePk) %>%
+        {if(!is.null(.$id)) rename(., official_id := id) else mutate(., official_id = -1)}
+
 
     }
 
-    ret_val
+    ret_val %>% clean_names()
 }
 
 
 ###################################
-#' Returns plays with two either added or replaced columns coord_x_st, coord_y_st, event, period, thes values are standardized so that home is always shooting to the right and away always shoots to the left in all periods
+#' Returns plays with two either added or replaced columns coord_x_st, coord_y_st, event, period,
+#' these values are standardized so that home is always shooting to the right and away
+#' always shoots to the left in all periods
 #' @param plays dataframe of plays, must have these columns coord_x, coord_y
 nhl_game_x_y_normalize <- function(plays){
     #x,y coordinates are based on actual cartesian coordiantes, establish a
@@ -540,7 +982,7 @@ nhl_game_x_y_normalize <- function(plays){
 
     plays_loc %>%
         filter(event == "Shot" & period == 1) %>%
-        #select(coord_x, is_home) %>%
+        #dplyr::select(coord_x, is_home) %>%
         mutate(x_is_positive = coord_x > 0) %>%
         count(game_id, is_home, x_is_positive, sort = T) %>%
         pivot_wider(names_from = x_is_positive, values_from = n, values_fill = 0) %>%
@@ -554,9 +996,9 @@ nhl_game_x_y_normalize <- function(plays){
         group_by(game_id) %>%
         summarise(needs_switch_count = sum(needs_switch_count)) %>%
         mutate(needs_switch = needs_switch_count > 0) %>%
-        select( game_id, needs_switch) %>%
+        dplyr::select( game_id, needs_switch) %>%
         full_join(.,
-            select(plays_loc,play_id, game_id, period, coord_y, coord_x) ,
+            dplyr::select(plays_loc,play_id, game_id, period, coord_y, coord_x) ,
             by = "game_id") %>%
         mutate(coord_x_st = ifelse((needs_switch & period %in% c(2,4,6,8)) |
                                     (!needs_switch & period %in% c(1,3,5,7))  ,
@@ -569,8 +1011,8 @@ nhl_game_x_y_normalize <- function(plays){
                                    -coord_y)
 
         ) %>%
-        select(play_id, coord_x_st, coord_y_st) %>%
-        left_join(select(plays, -one_of("coord_x_st", "coord_y_st")), .,  by = c("play_id"))
+        dplyr::select(play_id, coord_x_st, coord_y_st) %>%
+        left_join(dplyr::select(plays, -one_of("coord_x_st", "coord_y_st")), .,  by = c("play_id"))
 
         #count(event)
     # %>%
@@ -602,7 +1044,7 @@ nhl_generic_data <- function(full_url, id, name2get) {
         return(tibble())
     }
 
-    ret_val
+    ret_val %>% clean_names()
 }
 
 
@@ -612,6 +1054,9 @@ nhl_generic_data <- function(full_url, id, name2get) {
 ###################################
 #' Returns a game object, by checking with the NHL's API
 #' @param game_id game id
+#'
+#' nhl_play_by_play(2018020560)
+#'
 nhl_play_by_play <- function(game_id, url = "https://statsapi.web.nhl.com/api/v1/game/{game_id}/feed/live?site=en_nhl"){
     raw_data <- url %>%
         glue() %>%
@@ -624,90 +1069,54 @@ nhl_play_by_play <- function(game_id, url = "https://statsapi.web.nhl.com/api/v1
 ###################################
 #' does nhl_Shifts many times
 #' @param game_ids vector of game_ID
-nhl_Shifts_many <- function(game_ids){
-    tmp <-
-    game_ids %>%
-        unique() %>%
-        #map_dfr(nhl_Shifts)
-        lapply(nhl_Shifts)
-
-    #Remove blank tibbles
-    tmp <- tmp[lapply(tmp, function(x){nrow(x)}) %>% unlist() != 0] #%>% length()
-
-    #bind the tibbles
-    tmp <- tmp %>% bind_rows()
-    #lapply(tmp, function(x){nrow(x) == length(x$endTime)}) %>% unlist() %>% table()
-    # nrow(tmp)
-    # length(tmp$endTime)
-    # lapply(colnames(tmp), function(x){
-    #     print(length(tmp[[x]]))
-    #
-    # })
-    tmp
+nhl_games_shifts <- function(game_ids){
+    nhl_lapply(game_ids, nhl_shifts)
 }
 
 ###################################
 #' Returns a shifts object, by checking with the NHL's API
 #' @param game_id game id
-nhl_Shifts <- function(game_id, url = "https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={game_id}"){
+#'
+#' @example
+#' nhl_shifts (game_id = 2018020743)
+nhl_shifts <- function(game_id, url = "https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={game_id}"){
     shifts <-
         url %>% glue() %>%
         nhl_generic_data(game_id, "data")
 
     if (nrow(shifts) == 0){
-        # print(glue("game_id={game_id}, same={length(shifts$endTime) == nrow(shifts)} , shifts={nrow(shifts)}, endtime = {length(shifts$endTime)}...."))
-        # if (length(shifts$endTime) != nrow(shifts)){
-        #     print(glue("endtime = {length(shifts$endTime)}"))
-        #     print(glue("shifts = {nrow(shifts)}"))
-        #     assertthat::assert_that(length(shifts$endTime) == nrow(shifts))
-        #     stop()
-        # }
-
-        return(shifts)
+       return(shifts)
     }
-    # print(glue("game_id={game_id}, same={length(shifts$endTime) == nrow(shifts)} , shifts={nrow(shifts)}, endtime = {length(shifts$endTime)}...."))
-    # if (length(shifts$endTime) != nrow(shifts)){
-    #     print(glue("game_id={game_id}, same={length(shifts$endTime) == nrow(shifts)} , shifts={nrow(shifts)}, endtime = {length(shifts$endTime)}...."))
-    #     print(glue("endtime = {length(shifts$endTime)}"))
-    #     print(glue("shifts = {nrow(shifts)}"))
-    #     assertthat::assert_that(length(shifts$endTime) == nrow(shifts))
-    #     stop()
-    # }
 
     shifts <-
         shifts %>%
             mutate(duration = as.ITime(duration, format="%M:%OS")) %>%
-            mutate(endTime = as.ITime(endTime, format="%M:%OS")) %>%
-            mutate(startTime = as.ITime(startTime, format="%M:%OS")) %>%
-            mutate(duration = minute(duration)*60 + second(duration))
+            mutate(end_time = as.ITime(end_time, format="%M:%OS")) %>%
+            mutate(start_time = as.ITime( start_time, format="%M:%OS")) %>%
+            mutate(duration = minute(duration)*60 + second(duration)) %>%
+            rename(shift_id := id)
 
-    # print(glue("game_id={game_id}, same={length(shifts$endTime) == nrow(shifts)} , shifts={nrow(shifts)}, endtime = {length(shifts$endTime)}...."))
-    # if (length(shifts$endTime) != nrow(shifts)){
-    #     print(glue("game_id={game_id}, same={length(shifts$endTime) == nrow(shifts)} , shifts={nrow(shifts)}, endtime = {length(shifts$endTime)}...."))
-    #     print(glue("endtime = {length(shifts$endTime)}"))
-    #     print(glue("shifts = {nrow(shifts)}"))
-    #     assertthat::assert_that(length(shifts$endTime) == nrow(shifts))
-    #     stop()
-    # }
-    shifts
+
+    shifts %>% clean_names()
 }
-
 
 
 
 ###################################
 #' Returns players tombstone information by checking with the NHL's API
 #' @param game_id game id
-nhl_playerprofiles <- function(id){
-    id %>%
-        unique() %>%
-        map_dfr(nhl_playerprofile)
+nhl_player_profiles <- function(player_id){
+    nhl_lapply(player_id, nhl_player_profile)
+    # id %>%
+    #     unique() %>%
+    #     map_dfr(nhl_playerprofile)
 }
 
 ###################################
 #' Returns a player tombstone information by checking with the NHL's API
-#' @param game_id game id
-nhl_playerprofile <- function(player_id = 8477474, url = "http://statsapi.web.nhl.com/api/v1/people/{player_id}"){
+#' @param player_id player_id
+#' nhl_playerprofile(player_id = 8477474)
+nhl_player_profile <- function(player_id = 8477474, url = "http://statsapi.web.nhl.com/api/v1/people/{player_id}"){
     playerprofile <-
         url %>% glue() %>%
         nhl_generic_data(player_id, "people")
@@ -716,10 +1125,13 @@ nhl_playerprofile <- function(player_id = 8477474, url = "http://statsapi.web.nh
         return(playerprofile)
     }
 
-    playerprofile <- nhl_expand_df_many(playerprofile, c("primaryPosition", "currentTeam"))
+    playerprofile <- nhl_expand_df_many(playerprofile, c("primary_position", "current_team"))
 
-
-    playerprofile
+    playerprofile %>%
+        rename(player_id := id)
+        tidyr::separate(height, into = c("feet", "inches"), convert = T) %>%
+        mutate(height_cm = 2.54*(feet*12 + inches)) %>%
+        clean_names()
 }
 
 
@@ -729,9 +1141,10 @@ nhl_playerprofile <- function(player_id = 8477474, url = "http://statsapi.web.nh
 #' Does nhl_teamprofile many times for a vector
 #' @param venue_id venue_id
 nhl_teamprofiles <- function(team_id){
-    team_id %>%
-        unique() %>%
-        map_dfr(nhl_teamprofile)
+    nhl_lapply(team_id, nhl_teamprofile)
+    # team_id %>%
+    #     unique() %>%
+    #     map_dfr(nhl_teamprofile)
 }
 
 
@@ -751,11 +1164,11 @@ nhl_expand_df <- function(raw_data, col_nm){
     if(col_nm %in% colnames(raw_data)){
         raw_data <-
             bind_cols(
-                select(raw_data, -col_nm),
+                dplyr::select(raw_data, -col_nm),
                 raw_data[[col_nm]] %>% rename_all( ~ paste0(col_nm, "_", .x))
             )
     }
-    return(raw_data)
+    raw_data %>% clean_names()
 }
 
 ###################################
@@ -776,13 +1189,10 @@ nhl_teamprofile <- function(team_id = 1, url = "https://statsapi.web.nhl.com/api
 #' Does nhl_venue many times for a vector
 #' @param venue_id venue_id
 nhl_venues <- function(venue_id){
-    venue_id %>%
-        unique() %>%
-        map_dfr(nhl_venue)
+    nhl_lapply(venue_id, nhl_venue)
 }
 
 #nhl_venues(sch$venue_id[1:5])
-
 ###################################
 #' Returns a venue tombstone information by checking with the NHL's API
 #' @param venue_id venue_id
@@ -805,7 +1215,7 @@ nhl_schedule <- function(st_dt = "2018-07-01", en_dt= "2020-09-01", url = "https
 
         curr_gms <-
         dts$games[[irow]] %>%
-            select(gamePk, link, gameType, season,gameDate) %>%
+            dplyr::select(gamePk, link, gameType, season,gameDate) %>%
             tibble()
 
         curr_tms <- dts$games[[irow]]$teams
@@ -835,3 +1245,4 @@ nhl_schedule <- function(st_dt = "2018-07-01", en_dt= "2020-09-01", url = "https
 nhl_link <- function(link, url = "https://statsapi.web.nhl.com{link}"){
     url %>% glue() %>% fromJSON_cache()
 }
+
